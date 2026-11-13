@@ -26,6 +26,7 @@ RUN uv sync --frozen --no-dev
 FROM base AS test
 RUN uv sync --frozen
 COPY tests ./tests
+COPY prototypes ./prototypes
 CMD ["sh", "-c", "ruff check . && ruff format --check . && mypy && pytest -v"]
 
 # The CLI itself. Mount an output directory at /out.

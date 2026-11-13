@@ -39,13 +39,17 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
 "src/fetchwin/convert.py" = ["S603"]
 # Catalog XML comes from Microsoft over HTTPS and is size-limited; expat >= 2.4 blocks entity bombs.
 "src/fetchwin/catalog.py" = ["S314"]
+# Parked research prototype (see its README); it drives QEMU/hdiutil/mtools with argv lists.
+"prototypes/**" = ["S603", "S607"]
 
 [tool.mypy]
 strict = true
 python_version = "3.11"
-files = ["src", "tests"]
+files = ["src", "tests", "prototypes/winpe-dism"]
+mypy_path = "prototypes/winpe-dism"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["prototypes/winpe-dism"]
 addopts = "-ra --strict-markers"
 markers = ["integration: needs real wimlib-imagex and mkisofs/genisoimage (fails, never skips, if absent)"]

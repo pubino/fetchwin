@@ -73,7 +73,8 @@ DISM takes the checkpoints the system lacks from there. Installing each package 
 does not work; on 26300 media, DISM fails on the 24H2 checkpoint KB5043080 (`0x80070228`).
 
 `integrate` also tries to service `install.wim` offline. That isn't available yet: the
-WinPE/QEMU DISM worker is still a prototype. **When integration fails or isn't available,
+WinPE/QEMU DISM worker is a parked prototype
+([`prototypes/winpe-dism`](prototypes/winpe-dism/README.md)). **When integration fails or isn't available,
 the packages stay next to the ISO.** That's the intended fallback, for the installed
 system to apply with the script below.
 
