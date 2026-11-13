@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic catalog mirroring the structure of Microsoft's products.xml. Not real data. -->
+<MCT>
+  <Catalogs>
+    <Catalog version="1.0">
+      <PublishedMedia>
+        <Files>
+          <!-- older consumer arm64 build -->
+          <File>
+            <FileName>22631.2861.231204-0538.23h2_ni_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode><Language>English (United States)</Language>
+            <Edition>Professional</Edition><Architecture>ARM64</Architecture>
+            <Size>4000000000</Size><Sha1>1111111111111111111111111111111111111111</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/aaaa/22631.2861.231204-0538.23h2_ni_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FilePath>
+          </File>
+          <!-- newer consumer arm64 build, listed once per edition -->
+          <File>
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode><Language>English (United States)</Language>
+            <Edition>Professional</Edition><Architecture>ARM64</Architecture>
+            <Size>4527171158</Size><Sha1>C78FD344E845D3B17CB91C40BF4A856459DA1B6C</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/bbbb/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FilePath>
+          </File>
+          <File>
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode><Language>English (United States)</Language>
+            <Edition>Core</Edition><Architecture>ARM64</Architecture>
+            <Size>4527171158</Size><Sha1>c78fd344e845d3b17cb91c40bf4a856459da1b6c</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/bbbb/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FilePath>
+          </File>
+          <!-- business arm64 -->
+          <File>
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_A64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode><Language>English (United States)</Language>
+            <Edition>Enterprise</Edition><Architecture>ARM64</Architecture>
+            <Size>4476243990</Size><Sha1>a67698c3b2988dc7fbd38063875a14b5d2e2c9ee</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/cccc/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_A64FRE_en-us.esd</FilePath>
+          </File>
+          <!-- business x64, Sha256-only (25H2-style catalog schema) -->
+          <File>
+            <FileName>26200.6584.250915-1905.25h2_ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode><Language>English (United States)</Language>
+            <Edition>Enterprise</Edition><Architecture>x64</Architecture>
+            <Size>5000000000</Size><Sha256>2222222222222222222222222222222222222222222222222222222222222222</Sha256>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/dddd/26200.6584.250915-1905.25h2_ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_en-us.esd</FilePath>
+          </File>
+          <!-- another language -->
+          <File>
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_de-de.esd</FileName>
+            <LanguageCode>de-de</LanguageCode><Language>German</Language>
+            <Edition>Professional</Edition><Architecture>ARM64</Architecture>
+            <Size>4500000000</Size><Sha1>3333333333333333333333333333333333333333</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/eeee/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_de-de.esd</FilePath>
+          </File>
+          <!-- non-ESD helper entry that must be ignored -->
+          <File>
+            <FileName>MediaCreationTool.exe</FileName>
+          </File>
+        </Files>
+      </PublishedMedia>
+    </Catalog>
+  </Catalogs>
+</MCT>

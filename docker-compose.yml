@@ -1,0 +1,26 @@
+services:
+  test:
+    build:
+      context: .
+      target: test
+
+  fetchwin:
+    build:
+      context: .
+      target: runtime
+    # Run as the invoking user so the ISO isn't root-owned (scripts/docker-fetch.sh sets these).
+    user: "${FETCHWIN_UID:-1000}:${FETCHWIN_GID:-1000}"
+    environment:
+      - FETCHWIN_ARCH
+      - FETCHWIN_CHANNEL
+      - FETCHWIN_LANG
+      - FETCHWIN_WINDOWS
+      - FETCHWIN_CATALOG
+      - FETCHWIN_OUT=/out
+    volumes:
+      - ${FETCHWIN_HOST_OUT:-./out}:/out
+
+  test-pwsh:
+    build:
+      context: .
+      dockerfile: tests/powershell/Dockerfile

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-container:
+    name: Linux (pinned Docker toolchain)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build test image
+        run: docker compose build test
+      - name: Lint, type-check, test (incl. real wimlib + genisoimage integration)
+        run: docker compose run --rm test
+
+  powershell:
+    name: Windows update installer (Pester + PSScriptAnalyzer)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build test image
+        run: docker compose build test-pwsh
+      - name: Lint and test Install-FetchwinUpdates.ps1
+        run: docker compose run --rm test-pwsh
+
+  macos:
+    name: macOS (Homebrew toolchain)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: brew bundle --file=Brewfile
+      - name: Lint, type-check, test (incl. real wimlib + cdrtools integration)
+        run: zsh scripts/test.sh

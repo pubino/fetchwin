@@ -1,0 +1,41 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+
+# Media and scratch (never commit downloads or build output)
+*.iso
+*.iso.json
+*.iso.sha256
+*.iso.tmp
+*.esd
+*.esd.part
+*.swm
+*.msu
+*.updates/
+*.wim
+products.cab
+.fetchwin-work/
+out/
+
+# Config / secrets
+.env*
+!example.env
+
+# Misc
+node_modules/
+*.db
+.DS_Store
+
+# Local agent config
+CLAUDE.md
+.claude/
+
+# Public CA certificate pinned for Windows Update (overrides a global *.pem ignore)
+!src/fetchwin/certs/microsoft-root-ca-2011.pem
