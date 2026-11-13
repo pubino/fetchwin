@@ -7,8 +7,14 @@ Flow:
   3. Windows Update's Update Metadata Service (UMS, see fetchwin.ums) returns the
      update files for that exact build, each with a SHA-256 digest.
   4. The .msu packages are downloaded and verified into <iso-stem>.updates/, with an
-     updates.json manifest that lists them in install order, and
-     Install-FetchwinUpdates.ps1, which installs them on a running Windows system.
+     updates.json manifest naming the target package, and Install-FetchwinUpdates.ps1,
+     which installs it on a running Windows system.
+
+The offer holds the target cumulative update and every checkpoint update before it,
+including old ones the media already contains. Only the target is installed: DISM
+takes whatever checkpoints the system lacks from the same folder (Microsoft's "in one
+go" method). Installing each package in turn failed: DISM on 26300 cannot parse the
+24H2 checkpoint KB5043080 (0x80070228).
 
 Integration into install.wim needs an offline-servicing worker. If integration is
 unavailable or fails, the verified packages stay next to the ISO for the installer
@@ -71,7 +77,7 @@ class UpdatesResult:
     update_id: str = ""
     title: str = ""
     packages: list[dict[str, Any]] = field(default_factory=list)
-    install_order: list[str] = field(default_factory=list)
+    target: str = ""
     directory: str = ""
     installer: str = ""
     note: str = ""
@@ -195,8 +201,16 @@ def msu_packages(offer_json: bytes, arch: str) -> tuple[str, list[UpdatePackage]
         pkgs[name.lower()] = UpdatePackage(name, f"KB{m.group(1)}", size, raw.hex(), str(url))
     if not pkgs:
         raise FetchwinError(f"UMS offer contains no {want_tag} .msu packages")
-    # Ascending KB order: checkpoint/enablement packages precede the newest cumulative update.
     return str(ids[0]), sorted(pkgs.values(), key=lambda p: int(p.kb[2:]))
+
+
+def pick_target(pkgs: list[UpdatePackage], title: str) -> UpdatePackage:
+    """The cumulative update to install: the KB the update's title names, else the newest."""
+    named = re.findall(r"\(KB(\d{6,8})\)", title)
+    for p in pkgs:
+        if named and p.kb == f"KB{named[0]}":
+            return p
+    return max(pkgs, key=lambda p: int(p.kb[2:]))
 
 
 def update_title(update_id: str, get: Callable[[str], bytes]) -> str:
@@ -270,7 +284,7 @@ def fetch_updates(
     result.directory = str(dest)
     result.installer = INSTALLER
     result.packages = [{k: v for k, v in asdict(p).items() if k != "url"} for p in pkgs]
-    result.install_order = [p.filename for p in pkgs]
+    result.target = pick_target(pkgs, result.title).filename
     return result
 
 

@@ -457,8 +457,9 @@ def _updates_step(
             updates.write_updates_manifest(res, dest)
             if res.status == "downloaded":
                 log.write(
-                    f"Updates left alongside the ISO in {dest} (install in this order: "
-                    f"{', '.join(res.install_order)})\n"
+                    f"Updates left alongside the ISO in {dest} (install {res.target} "
+                    "(DISM takes the checkpoints it needs from the same folder), "
+                    f"or run {updates.INSTALLER})\n"
                 )
         data["updates"] = res.to_dict()
     except (FetchwinError, OSError) as e:

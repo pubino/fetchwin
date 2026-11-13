@@ -140,14 +140,11 @@ def test_fetch_updates_downloads_in_order(tmp_path: Path) -> None:
     assert res.status == "downloaded"
     assert res.target_build == "26300.9974" and res.base_build == "26300.9711"
     assert res.title == "2026-11 Security Update"
-    assert (
-        f["downloaded"]
-        == res.install_order
-        == [
-            "Windows11.0-KB5043080-arm64.msu",
-            "Windows11.0-KB5132061-arm64.msu",
-        ]
-    )
+    assert f["downloaded"] == [
+        "Windows11.0-KB5043080-arm64.msu",
+        "Windows11.0-KB5132061-arm64.msu",
+    ]
+    assert res.target == "Windows11.0-KB5132061-arm64.msu"
     assert b"V=10.0.26300.9974" in f["posted"][0]
 
 
@@ -159,6 +156,25 @@ def test_fetch_updates_current_media_downloads_nothing(tmp_path: Path) -> None:
     assert res.status == "current" and res.packages == []
     assert f["posted"] == [] and f["downloaded"] == []
     assert not (tmp_path / "u").exists()
+
+
+def _pkg(kb: str) -> updates.UpdatePackage:
+    return updates.UpdatePackage(f"Windows11.0-{kb}-arm64.msu", kb, 1, "0" * 64, "u")
+
+
+def test_target_is_the_kb_the_update_title_names() -> None:
+    # Regression (VM run 2026-11-12): installing every package in KB order sent the 24H2
+    # checkpoint KB5043080 through DISM on 26300, which failed (0x80070228). Installing only
+    # the target, with the checkpoints in the same folder, reached the target build.
+    pkgs = [_pkg("KB5043080"), _pkg("KB5132060"), _pkg("KB5132061"), _pkg("KB5199999")]
+    title = "2026-11 Security Update (KB5132061) (26300.9974)"
+    assert updates.pick_target(pkgs, title).kb == "KB5132061"
+
+
+def test_target_falls_back_to_the_highest_kb() -> None:
+    pkgs = [_pkg("KB5043080"), _pkg("KB5132061")]
+    assert updates.pick_target(pkgs, "").kb == "KB5132061"
+    assert updates.pick_target(pkgs, "Update (KB5000001)").kb == "KB5132061"
 
 
 def test_installer_script_is_packaged_ascii_powershell() -> None:
@@ -226,13 +242,14 @@ def test_cli_updates_download_leaves_packages_alongside_iso(
         "updates.json",
     ]
     um = json.loads((udir / "updates.json").read_text())
-    assert um["install_order"][-1] == "Windows11.0-KB5132061-arm64.msu"
+    assert um["target"] == "Windows11.0-KB5132061-arm64.msu"
+    assert "install_order" not in um
     assert all("url" not in p for p in um["packages"])
     assert um["installer"] == "Install-FetchwinUpdates.ps1"
     assert (udir / "Install-FetchwinUpdates.ps1").read_bytes() == updates.installer_script()
     manifest = json.loads(iso.with_name(iso.name + ".json").read_text())
     assert manifest["updates"]["status"] == "downloaded"
-    assert "install in this order" in err
+    assert "install Windows11.0-KB5132061-arm64.msu (DISM takes the checkpoints" in err
 
 
 def test_cli_updates_integrate_falls_back_to_leaving_packages(

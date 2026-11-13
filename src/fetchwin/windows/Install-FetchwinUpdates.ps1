@@ -3,17 +3,18 @@
     Install the update packages that fetchwin left next to an ISO, on the running system.
 
 .DESCRIPTION
-    Reads updates.json from the package folder, checks every .msu against its recorded
-    SHA-256 and its Microsoft Authenticode signature, then installs the packages one at a
-    time in install_order with DISM (/Online /Add-Package). This is the "install each MSU
-    file individually, in order" method that Microsoft documents for checkpoint
-    cumulative updates.
+    Reads updates.json from the package folder and checks every .msu against its recorded
+    SHA-256 and its Microsoft Authenticode signature. Then it installs only the target
+    cumulative update with DISM (/Online /Add-Package). DISM takes whatever checkpoint
+    updates the system lacks from the same folder: Microsoft's "in one go" method for
+    checkpoint cumulative updates. (Installing every package in turn fails: the folder
+    also holds old checkpoints that newer media already contains.)
 
-    The script is safe to re-run. It records finished packages in
+    The script is safe to re-run. It records progress in
     %ProgramData%\fetchwin\updates-state.json and exits at once when the OS build already
     matches target_build.
 
-    If a package cannot install until Windows restarts, the script stops and asks for a
+    When the install needs a restart, or cannot start until one, the script asks for a
     restart (exit 3010). With -Restart it restarts by itself. With -AutoResume it
     registers a startup task that runs it again after each restart and removes itself
     when the work is done or has failed.
@@ -171,7 +172,7 @@ function Read-UpdatesManifest {
     } catch {
         throw [FetchwinInputError]::new("updates.json is not valid JSON: $($_.Exception.Message)")
     }
-    foreach ($key in 'target_build', 'install_order', 'packages') {
+    foreach ($key in 'target_build', 'target', 'packages') {
         if (-not ($m.PSObject.Properties.Name -contains $key)) {
             throw [FetchwinInputError]::new("updates.json has no '$key'")
         }
@@ -179,7 +180,7 @@ function Read-UpdatesManifest {
     if ([string]$m.target_build -notmatch $script:BuildPattern) {
         throw [FetchwinInputError]::new("invalid target_build '$($m.target_build)'")
     }
-    $hashes = @{}
+    $packages = @()
     foreach ($p in @($m.packages)) {
         $name = [string]$p.filename
         if ($name -notmatch $script:MsuPattern) {
@@ -188,26 +189,18 @@ function Read-UpdatesManifest {
         if ([string]$p.sha256 -notmatch $script:Sha256Pattern) {
             throw [FetchwinInputError]::new("invalid sha256 for $name")
         }
-        $hashes[$name.ToLowerInvariant()] = ([string]$p.sha256).ToLowerInvariant()
-    }
-    $order = @()
-    foreach ($name in @($m.install_order)) {
-        $name = [string]$name
-        if (-not $hashes.ContainsKey($name.ToLowerInvariant())) {
-            throw [FetchwinInputError]::new("install_order names '$name', which is not in packages")
-        }
-        $null = $name -match $script:MsuPattern
-        $order += [pscustomobject]@{
+        $packages += [pscustomobject]@{
             Name   = $name
             File   = Join-Path $Dir $name
-            Sha256 = $hashes[$name.ToLowerInvariant()]
-            Arch   = $Matches[1].ToLowerInvariant()
+            Sha256 = ([string]$p.sha256).ToLowerInvariant()
+            Arch   = ([regex]::Match($name, $script:MsuPattern)).Groups[1].Value.ToLowerInvariant()
         }
     }
-    if ($order.Count -eq 0) {
-        throw [FetchwinInputError]::new('install_order is empty')
+    $target = @($packages | Where-Object { $_.Name -eq [string]$m.target })
+    if ($target.Count -ne 1) {
+        throw [FetchwinInputError]::new("target '$($m.target)' is not one of the packages")
     }
-    [pscustomobject]@{ TargetBuild = [string]$m.target_build; Packages = $order }
+    [pscustomobject]@{ TargetBuild = [string]$m.target_build; Packages = $packages; Target = $target[0] }
 }
 
 function Read-State {
@@ -247,7 +240,7 @@ function Request-Restart {
     $State.restarts = [int]$State.restarts + 1
     if ($State.restarts -gt $script:Opt.MaxRestarts) {
         Save-State $State
-        Write-UpdateLog "ERROR: still not done after $script:Opt.MaxRestarts restarts ($Reason)"
+        Write-UpdateLog "ERROR: still not done after $($script:Opt.MaxRestarts) restarts ($Reason)"
         return (Complete-Run 1)
     }
     Save-State $State
@@ -319,10 +312,6 @@ function Invoke-FetchwinUpdate {
     if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $logDir | Out-Null }
 
     foreach ($p in $manifest.Packages) {
-        if ($state.done -contains $p.Name) {
-            Write-UpdateLog "$($p.Name): already installed by an earlier run"
-            continue
-        }
         if (-not (Test-Path -LiteralPath $p.File -PathType Leaf)) {
             Write-UpdateLog "ERROR: $($p.Name) is missing from $Path"
             return (Complete-Run 2)
@@ -336,33 +325,39 @@ function Invoke-FetchwinUpdate {
             Write-UpdateLog "ERROR: $($p.Name) does not have a valid Microsoft signature"
             return (Complete-Run 2)
         }
-        if ($DryRun) {
-            Write-UpdateLog "Dry run: would install $($p.Name)"
-            continue
-        }
-        Write-UpdateLog "Installing $($p.Name) ..."
-        $code = Invoke-Dism -Package $p.File -LogFile (Join-Path $logDir ($p.Name + '.log'))
+    }
+    $t = $manifest.Target
+    if ($DryRun) {
+        Write-UpdateLog "Dry run: all packages verified; would install $($t.Name)"
+        return 0
+    }
+
+    if ($state.done -contains $t.Name) {
+        Write-UpdateLog "$($t.Name): installed by an earlier run"
+    } else {
+        Write-UpdateLog "Installing $($t.Name) (checkpoints from the same folder) ..."
+        $code = Invoke-Dism -Package $t.File -LogFile (Join-Path $logDir ($t.Name + '.log'))
         if ($code -eq 0 -or $code -eq $script:RebootRequired) {
-            Write-UpdateLog "$($p.Name): installed (DISM exit $code)"
-            $state.done = @($state.done) + $p.Name
+            Write-UpdateLog "$($t.Name): installed (DISM exit $code)"
+            $state.done = @($state.done) + $t.Name
             Save-State $state
+            # DISM's 3010 is the evidence; the CBS RebootPending key is not always set.
+            if ($code -eq $script:RebootRequired) {
+                return (Request-Restart $state 'finish installing updates')
+            }
         } elseif ($code -eq $script:NotApplicable) {
-            Write-UpdateLog "$($p.Name): not applicable to this OS; skipped"
-            $state.done = @($state.done) + $p.Name
+            Write-UpdateLog "$($t.Name): DISM says it does not apply to this OS"
+            $state.done = @($state.done) + $t.Name
             Save-State $state
         } elseif (Test-RebootPending) {
-            Write-UpdateLog ('{0}: DISM exit 0x{1:X8} with a restart pending' -f $p.Name, $code)
-            return (Request-Restart $state "$($p.Name) needs the pending restart first")
+            Write-UpdateLog ('{0}: DISM exit 0x{1:X8} with a restart pending' -f $t.Name, $code)
+            return (Request-Restart $state "$($t.Name) needs the pending restart first")
         } else {
-            Write-UpdateLog ('ERROR: {0}: DISM exit 0x{1:X8}; see {2}' -f $p.Name, $code, $logDir)
+            Write-UpdateLog ('ERROR: {0}: DISM exit 0x{1:X8}; see {2}' -f $t.Name, $code, $logDir)
             return (Complete-Run 1)
         }
     }
 
-    if ($DryRun) {
-        Write-UpdateLog 'Dry run: all packages verified'
-        return 0
-    }
     if (Test-RebootPending) {
         return (Request-Restart $state 'finish installing updates')
     }

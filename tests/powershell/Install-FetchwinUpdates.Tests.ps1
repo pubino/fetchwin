@@ -30,7 +30,7 @@ BeforeAll {
             base_build    = '26300.9711'
             target_build  = '26300.9974'
             packages      = $pkgs
-            install_order = @($pkgs | ForEach-Object { $_.filename })
+            target        = 'Windows11.0-KB5132061-arm64.msu'
         }
         foreach ($k in $Override.Keys) { $m[$k] = $Override[$k] }
         $m | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $dir 'updates.json')
@@ -43,7 +43,7 @@ Describe 'Install-FetchwinUpdates' {
         $script:State = Join-Path $TestDrive ('state-' + [guid]::NewGuid().ToString('N'))
         $script:Builds = [System.Collections.Generic.Queue[string]]::new()
         $script:Pending = $false
-        $script:DismCodes = @{}
+        $script:DismCodes = [System.Collections.Generic.Queue[int]]::new()
         $script:Installed = [System.Collections.Generic.List[string]]::new()
 
         $Path = New-Fixture
@@ -51,6 +51,7 @@ Describe 'Install-FetchwinUpdates' {
         $AutoResume = $false
         $DryRun = $false
         $MaxRestarts = 4
+        $Target = 'Windows11.0-KB5132061-arm64.msu'
 
         Mock Get-StateDirectory { $script:State }
         Mock Get-OsBuild {
@@ -61,9 +62,8 @@ Describe 'Install-FetchwinUpdates' {
         Mock Test-RebootPending { $script:Pending }
         Mock Test-MicrosoftSignature { $true }
         Mock Invoke-Dism {
-            $name = Split-Path -Leaf $Package
-            $script:Installed.Add($name)
-            if ($script:DismCodes.ContainsKey($name)) { return $script:DismCodes[$name] }
+            $script:Installed.Add((Split-Path -Leaf $Package))
+            if ($script:DismCodes.Count) { return $script:DismCodes.Dequeue() }
             0
         }
         Mock Invoke-Restart {}
@@ -78,36 +78,32 @@ Describe 'Install-FetchwinUpdates' {
         Should -Invoke Invoke-Dism -Times 0 -Exactly
     }
 
-    It 'installs every package in install_order and exits 0 when the build is reached' {
+    It 'installs only the target; DISM takes the checkpoints from the same folder' {
         '26300.9711', '26300.9974' | ForEach-Object { $script:Builds.Enqueue($_) }
         Invoke-Run | Should -Be 0
-        $script:Installed | Should -Be @('Windows11.0-KB5043080-arm64.msu', 'Windows11.0-KB5132061-arm64.msu')
-        $saved = Get-Content (Join-Path $script:State 'updates-state.json') -Raw | ConvertFrom-Json
-        $saved.done | Should -Be @('Windows11.0-KB5043080-arm64.msu', 'Windows11.0-KB5132061-arm64.msu')
+        $script:Installed | Should -Be @($Target)
         Get-Content (Join-Path $script:State 'install-updates.log') -Raw | Should -Match 'OS is at 26300.9974'
     }
 
-    It 'skips a package that DISM says is not applicable' {
+    It 'installs the package updates.json names as the target' {
         '26300.9711', '26300.9974' | ForEach-Object { $script:Builds.Enqueue($_) }
-        $script:DismCodes['Windows11.0-KB5043080-arm64.msu'] = -2146498530
+        $Path = New-Fixture -Override @{ target = 'Windows11.0-KB5043080-arm64.msu' }
         Invoke-Run | Should -Be 0
-        $script:Installed.Count | Should -Be 2
+        $script:Installed | Should -Be @('Windows11.0-KB5043080-arm64.msu')
     }
 
-    It 'asks for a restart (3010) when the last package needs one' {
+    It 'asks for a restart on DISM 3010 even when Windows shows no pending restart' {
+        # Regression (VM run 2026-11-12): DISM returned 3010 for the target but the CBS
+        # RebootPending key was not set, so the script went on to fail its build check.
         $script:Builds.Enqueue('26300.9711')
-        $script:DismCodes['Windows11.0-KB5132061-arm64.msu'] = 3010
-        $script:Pending = $true
+        $script:DismCodes.Enqueue(3010)
         Invoke-Run | Should -Be 3010
         Should -Invoke Invoke-Restart -Times 0 -Exactly
-        Should -Invoke Register-ResumeTask -Times 0 -Exactly
     }
 
-    It 'stops at a package blocked by a pending restart, then resumes after it' {
+    It 'restarts and resumes by itself with -Restart -AutoResume, then finishes' {
         $script:Builds.Enqueue('26300.9711')
-        $script:DismCodes['Windows11.0-KB5043080-arm64.msu'] = 3010
-        $script:DismCodes['Windows11.0-KB5132061-arm64.msu'] = -2146498511  # 0x800F0831
-        $script:Pending = $true
+        $script:DismCodes.Enqueue(3010)
         $Restart = $true
         $AutoResume = $true
         Invoke-Run | Should -Be 3010
@@ -115,42 +111,60 @@ Describe 'Install-FetchwinUpdates' {
         Should -Invoke Register-ResumeTask -Times 1 -Exactly
         Should -Invoke Unregister-ResumeTask -Times 0 -Exactly
 
-        # After the restart: the first package is done, the second now installs.
-        $script:Installed.Clear()
-        $script:DismCodes.Clear()
+        # After the restart the build is current: nothing more to install.
+        $script:Builds.Clear(); $script:Builds.Enqueue('26300.9974')
+        Invoke-Run | Should -Be 0
+        $script:Installed.Count | Should -Be 1
+        Should -Invoke Unregister-ResumeTask -Times 1 -Exactly
+    }
+
+    It 'fails after the restart if the target installed but the build did not move' {
+        $script:Builds.Enqueue('26300.9711')
+        $script:DismCodes.Enqueue(3010)
+        Invoke-Run | Should -Be 3010
+        Invoke-Run | Should -Be 1
+        $script:Installed.Count | Should -Be 1  # not installed again
+    }
+
+    It 'restarts first when an earlier restart blocks the install, then installs' {
+        $script:Builds.Enqueue('26300.9711')
+        $script:DismCodes.Enqueue(-2146498511)  # 0x800F0831
+        $script:Pending = $true
+        Invoke-Run | Should -Be 3010
+
         $script:Pending = $false
         $script:Builds.Clear()
         '26300.9711', '26300.9974' | ForEach-Object { $script:Builds.Enqueue($_) }
         Invoke-Run | Should -Be 0
-        $script:Installed | Should -Be @('Windows11.0-KB5132061-arm64.msu')
-        Should -Invoke Unregister-ResumeTask -Times 1 -Exactly
+        $script:Installed | Should -Be @($Target, $Target)
     }
 
     It 'fails with 1 after MaxRestarts restarts' {
         $script:Builds.Enqueue('26300.9711')
-        $script:DismCodes['Windows11.0-KB5043080-arm64.msu'] = -2146498511
+        1..3 | ForEach-Object { $script:DismCodes.Enqueue(-2146498511) }
         $script:Pending = $true
         $MaxRestarts = 2
         Invoke-Run | Should -Be 3010
         Invoke-Run | Should -Be 3010
         Invoke-Run | Should -Be 1
+        Get-Content (Join-Path $script:State 'install-updates.log') -Raw | Should -Match 'after 2 restarts'
     }
 
     It 'fails with 1 and removes the resume task on a DISM error with no restart pending' {
         $script:Builds.Enqueue('26300.9711')
-        $script:DismCodes['Windows11.0-KB5043080-arm64.msu'] = -2146498302  # 0x800F0922
+        $script:DismCodes.Enqueue(-2147024344)  # 0x80070228, the error from installing KB5043080
         $AutoResume = $true
         Invoke-Run | Should -Be 1
-        $script:Installed.Count | Should -Be 1
         Should -Invoke Unregister-ResumeTask -Times 1 -Exactly
     }
 
-    It 'fails with 1 when every package is processed but the build did not move' {
+    It 'fails with 1 when DISM says the target does not apply and the build is old' {
         $script:Builds.Enqueue('26300.9711')
+        $script:DismCodes.Enqueue(-2146498530)
         Invoke-Run | Should -Be 1
     }
 
-    It 'refuses a package whose SHA-256 does not match' {
+    It 'checks the checkpoint packages too: a bad hash on one stops the install' {
         $script:Builds.Enqueue('26300.9711')
         Add-Content -LiteralPath (Join-Path $Path 'Windows11.0-KB5043080-arm64.msu') -Value 'tampered'
         Invoke-Run | Should -Be 2
@@ -166,7 +180,7 @@ Describe 'Install-FetchwinUpdates' {
 
     It 'refuses a missing package' {
         $script:Builds.Enqueue('26300.9711')
-        Remove-Item -LiteralPath (Join-Path $Path 'Windows11.0-KB5132061-arm64.msu')
+        Remove-Item -LiteralPath (Join-Path $Path 'Windows11.0-KB5043080-arm64.msu')
         Invoke-Run | Should -Be 2
     }
 
@@ -191,16 +205,16 @@ Describe 'Install-FetchwinUpdates' {
     It 'rejects a manifest entry that is not a plain .msu file name' {
         $script:Builds.Enqueue('26300.9711')
         $Path = New-Fixture -Override @{
-            packages      = @(@{ filename = '..\..\evil.msu'; sha256 = ('0' * 64) })
-            install_order = @('..\..\evil.msu')
+            packages = @(@{ filename = '..\..\evil.msu'; sha256 = ('0' * 64) })
+            target   = '..\..\evil.msu'
         }
         Invoke-Run | Should -Be 2
         Should -Invoke Invoke-Dism -Times 0 -Exactly
     }
 
-    It 'rejects install_order entries missing from packages' {
+    It 'rejects a target that is not one of the packages' {
         $script:Builds.Enqueue('26300.9711')
-        $Path = New-Fixture -Override @{ install_order = @('Windows11.0-KB5000000-arm64.msu') }
+        $Path = New-Fixture -Override @{ target = 'Windows11.0-KB5000000-arm64.msu' }
         Invoke-Run | Should -Be 2
     }
 

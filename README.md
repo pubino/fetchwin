@@ -63,9 +63,14 @@ Install media lags behind Windows Update. With `--updates download` or
    table (e.g. 26H2 → `26300.9974`).
 3. Asks Windows Update's metadata service (UMS) for that build's update offer. It downloads
    the offer's `.msu` packages for your architecture, each checked against its SHA-256.
-4. Writes them to `<iso-stem>.updates/`, plus `updates.json` with the KBs, hashes and an
-   **install order** (ascending KB: checkpoint/enablement packages before the newest
-   cumulative update), plus `Install-FetchwinUpdates.ps1` to install them.
+4. Writes them to `<iso-stem>.updates/`, plus `updates.json` with the KBs, hashes and the
+   **target** package (the cumulative update the offer is for), plus
+   `Install-FetchwinUpdates.ps1` to install it.
+
+The offer holds the target and every earlier checkpoint update, including old ones the
+media already contains. Install only the target and keep the rest in the same folder:
+DISM takes the checkpoints the system lacks from there. Installing each package in turn
+does not work; on 26300 media, DISM fails on the 24H2 checkpoint KB5043080 (`0x80070228`).
 
 `integrate` also tries to service `install.wim` offline. That isn't available yet: the
 WinPE/QEMU DISM worker is still a prototype. **When integration fails or isn't available,
@@ -89,10 +94,10 @@ The script:
 - Checks each `.msu` against the SHA-256 in `updates.json` and requires a valid
   Microsoft Authenticode signature. It refuses packages for another release or CPU
   architecture.
-- Installs the packages one at a time, in `install_order`, with
-  `dism /Online /Add-Package`. This is Microsoft's documented "install each MSU individually,
-  in order" method for checkpoint cumulative updates. A package that DISM reports as not
-  applicable is skipped.
+- Installs only the target with `dism /Online /Add-Package`, which takes the checkpoints
+  it needs from the same folder. This is Microsoft's documented "in one go" method for
+  checkpoint cumulative updates. Tested on a Windows 11 26H2 Arm64 VM: 26300.9711 to
+  26300.9974 in about 5 minutes plus one restart.
 - Records progress in `%ProgramData%\fetchwin\updates-state.json`, so it is safe to re-run.
   It logs to `%ProgramData%\fetchwin\install-updates.log`, with DISM logs in `dism\`.
 - When a restart is needed, exits `3010`. With `-Restart` it restarts by itself. With
